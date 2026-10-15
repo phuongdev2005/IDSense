@@ -8,5 +8,7 @@ Thư mục này chứa toàn bộ tài liệu phân tích, thiết kế, triển
 2. [Đặc tả yêu cầu hệ thống](02-dac-ta-yeu-cau.md)
 3. [Thiết kế kiến trúc](03-thiet-ke-kien-truc.md)
 4. [Kế hoạch thực hiện và đánh giá](04-ke-hoach-thuc-hien.md)
+5. [Quyết định kỹ thuật cố định](05-quyet-dinh-ky-thuat.md)
+6. [Data flow của hệ thống](06-data-flow.md)
 
 Các tài liệu sẽ được cập nhật trước khi bắt đầu xây dựng mã nguồn.

@@ -16,20 +16,21 @@ Lưu lượng mạng
       +------v------+
           Fluent Bit
               |
-             Kafka
+              Kafka
           /         \
          v           v
-  lưu trữ log    ML Detection Service
+  lưu trữ log    Anomaly Detection Service
+                 (Threshold + Z-score)
                       |
                       v
               Correlation + risk score
                       |
        +--------------+--------------+
        v                             v
-  Elasticsearch/Loki             Alertmanager
+  Elasticsearch                 Alertmanager
        |                    Telegram/Email/Slack
        v
-  Grafana/Kibana
+    Grafana
 ```
 
 ## 3.2. Các module
@@ -40,52 +41,55 @@ Phân tích gói tin và phát hiện chữ ký theo bộ luật. Snort 3 dự k
 
 ### Flow extractor
 
-Trích xuất đặc trưng flow bằng Zeek, Argus hoặc CICFlowMeter. Đây là nguồn dữ liệu quan trọng trong trường hợp payload được mã hóa.
+Trích xuất đặc trưng kết nối/flow bằng Zeek. Đây là nguồn dữ liệu quan trọng để theo dõi hành vi mạng ở mức luồng kết nối, kể cả khi payload được mã hóa.
 
 ### Bộ tiếp nhận và chuẩn hóa
 
 Kiểm tra dữ liệu đầu vào, chuyển các trường về schema thống nhất, loại bỏ bản ghi lỗi và gắn thời gian tiếp nhận.
 
-### Module phát hiện bất thường
+### Module phát hiện bất thường (Anomaly Detection Service)
 
-Tạo đặc trưng từ flow và tần suất sự kiện, sau đó tính điểm bất thường hoặc phân loại. Các thuật toán dự kiến so sánh gồm Random Forest/XGBoost/SVM và Isolation Forest/Autoencoder/One-Class SVM. LSTM/GRU chỉ thực hiện nếu còn đủ thời gian và dữ liệu.
+Tổng hợp đặc trưng từ flow và tần suất sự kiện theo cửa sổ thời gian trượt (Sliding Window), sau đó áp dụng các thuật toán phát hiện xâm nhập không dùng AI/ML gồm:
+
+- **Luật ngưỡng tần suất (Threshold / Rate-based):** phát hiện quét cổng, ICMP sweep, brute force và flood/DoS dựa trên ngưỡng cấu hình.
+- **Độ lệch chuẩn thống kê (Z-score Anomaly Detection):** đo mức độ lệch của lưu lượng hiện tại so với đường cơ sở (baseline) lưu lượng bình thường.
 
 ### Correlation engine
 
-Hợp nhất alert từ Snort và ML theo thời gian, IP, flow hoặc campaign; tạo risk score và giảm cảnh báo trùng lặp.
+Hợp nhất alert từ Snort và kết quả từ Anomaly Detection Service theo cửa sổ thời gian, IP nguồn, IP đích hoặc luồng tấn công; tính điểm rủi ro (`risk_score`) và giảm cảnh báo trùng lặp.
 
 ### Kafka và Fluent Bit
 
-Fluent Bit thu nhận log JSON, Kafka làm lớp đệm và phân phối sự kiện đến ML service và hệ thống lưu trữ.
+Fluent Bit thu nhận log JSON từ Snort và Zeek, Kafka làm lớp đệm và phân phối sự kiện đến Anomaly Detection Service cùng hệ thống lưu trữ.
 
 ### Cơ sở dữ liệu
 
-Lưu sự kiện, kết quả phân tích, trạng thái xử lý và thông tin cấu hình cần thiết.
+Elasticsearch lưu sự kiện, flow, kết quả phân tích tương quan (`incident`) và phục vụ tìm kiếm, truy vấn lịch sử.
 
 ### API và giao diện
 
-Cung cấp truy vấn sự kiện, thống kê, chi tiết cảnh báo và các bộ lọc cho người giám sát.
+Cung cấp truy vấn sự kiện, thống kê, chi tiết cảnh báo, bằng chứng giải thích (`evidence`) và các bộ lọc trên Grafana cho người giám sát.
 
 ### Kubernetes và DevOps
 
-Snort, flow extractor và các service chạy bằng Helm trên Kubernetes. GitLab CI/CD thực hiện lint, test rule, test model, build image, scan bằng Trivy và triển khai qua ArgoCD theo GitOps. Terraform hoặc Ansible được cân nhắc cho hạ tầng lab.
+Snort, Zeek và các service chạy bằng Helm trên Kubernetes (k3s). GitLab CI/CD thực hiện lint, test rule Snort, test thuật toán phát hiện, build image, scan bằng Trivy và triển khai qua ArgoCD theo GitOps.
 
 ## 3.3. Luồng xử lý
 
-1. Snort quan sát lưu lượng.
-2. Snort tạo cảnh báo khi khớp luật.
-3. Collector nhận và chuẩn hóa cảnh báo.
-4. Hệ thống lưu sự kiện và chạy phân tích bổ sung.
-5. Dashboard hiển thị cảnh báo, điểm rủi ro và thống kê.
-6. Người giám sát điều tra và đánh dấu kết quả xử lý.
+1. Snort 3 quan sát gói tin và tạo cảnh báo khi khớp luật chữ ký; đồng thời Zeek trích xuất thông tin flow.
+2. Fluent Bit thu thập, chuẩn hóa log JSON và đẩy vào Kafka.
+3. Anomaly Detection Service đọc dữ liệu từ Kafka, tổng hợp theo cửa sổ thời gian và chạy thuật toán luật ngưỡng + Z-score.
+4. Correlation Engine hợp nhất cảnh báo chữ ký và điểm bất thường thống kê thành `incident` kèm `risk_score`.
+5. Elasticsearch lưu trữ sự kiện; Grafana hiển thị dashboard và Alertmanager gửi thông báo khi vượt ngưỡng rủi ro.
+6. Người giám sát điều tra nguyên nhân qua các chỉ số giải thích và xử lý cảnh báo.
 
-## 3.3. Kiến trúc triển khai
+## 3.4. Kiến trúc triển khai
 
-- **Sensor layer:** Snort DaemonSet và flow extractor.
+- **Sensor layer:** Snort 3 và Zeek.
 - **Streaming layer:** Fluent Bit và Kafka.
-- **Detection layer:** ML Detection Service và correlation.
-- **Storage layer:** Elasticsearch hoặc Loki; Prometheus lưu metrics.
-- **Presentation layer:** Grafana/Kibana và Alertmanager.
+- **Detection layer:** Anomaly Detection Service (Threshold + Z-score) và Correlation Engine.
+- **Storage layer:** Elasticsearch lưu log/incident; Prometheus lưu metrics hệ thống.
+- **Presentation layer:** Grafana và Alertmanager.
 - **Delivery layer:** GitLab CI/CD, Container Registry, Helm và ArgoCD.
 
 Các thành phần bảo mật tối thiểu gồm RBAC, NetworkPolicy, Kubernetes Secret và giới hạn quyền của service account.

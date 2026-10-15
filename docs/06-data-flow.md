@@ -13,9 +13,9 @@
         ↓
 5. Kafka nhận event
         ↓
-6. ML service chạy luật ngưỡng, Z-score và Decision Tree để tạo ml_label và anomaly_score
+6. Anomaly Detection Service chạy luật ngưỡng trượt (Threshold) và Z-score để tạo anomaly_type, threshold_score và anomaly_score
         ↓
-7. Correlation tạo incident và risk_score
+7. Correlation Engine tạo incident và risk_score
         ↓
 8. Elasticsearch lưu kết quả
         ↓
@@ -65,14 +65,15 @@ Trong cửa sổ 60 giây, hệ thống tổng hợp thêm:
 }
 ```
 
-### Kết quả ML
+### Kết quả thuật toán phát hiện bất thường (Threshold + Z-score)
 
 ```json
 {
-  "ml_label": "PORT_SCAN",
-  "ml_probability": 0.96,
-  "anomaly_score": 0.91,
-  "top_features": ["unique_dst_ports", "syn_count", "failed_connection_ratio"]
+  "anomaly_type": "PORT_SCAN",
+  "threshold_score": 95.0,
+  "anomaly_score": 91.0,
+  "max_z_score": 6.4,
+  "exceeded_metrics": ["unique_dst_ports", "syn_count", "failed_connection_ratio"]
 }
 ```
 
@@ -81,9 +82,9 @@ Trong cửa sổ 60 giây, hệ thống tổng hợp thêm:
 ```json
 {
   "incident_type": "PORT_SCAN",
-  "risk_score": 94.2,
+  "risk_score": 93.2,
   "severity": "high",
-  "evidence": ["snort_signature", "high_ml_probability", "abnormal_connection_rate"]
+  "evidence": ["snort_signature", "threshold_exceeded", "high_z_score"]
 }
 ```
 
@@ -92,7 +93,7 @@ Trong cửa sổ 60 giây, hệ thống tổng hợp thêm:
 | Loại | Ví dụ | Dùng để |
 |---|---|---|
 | Packet/PCAP | TCP SYN, DNS query | Replay và điều tra sâu |
-| Flow | duration, bytes, packets | Đầu vào cho ML |
-| Snort alert | signature, severity | Phát hiện theo rule |
-| ML result | label, probability | Phát hiện bất thường/phân loại |
-| Incident | risk score, evidence | Hiển thị và cảnh báo |
+| Flow | duration, bytes, packets | Đầu vào cho thuật toán thống kê & luật ngưỡng |
+| Snort alert | signature, severity | Phát hiện theo rule chữ ký |
+| Anomaly result | anomaly_type, threshold_score, z_score | Phát hiện bất thường theo ngưỡng và độ lệch chuẩn |
+| Incident | risk score, evidence | Hiển thị tương quan và gửi cảnh báo |
